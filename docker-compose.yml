@@ -1,0 +1,250 @@
+version: '3.8'
+
+services:
+  # ========================================================
+  # Infrastructure: Databases, Broker & Cache
+  # ========================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: ecom-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7.0
+    container_name: ecom-mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/mongo-init/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ecom-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: ecom-zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: ecom-kafka
+    restart: always
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  # ========================================================
+  # Microservices (Domain-Driven Design / Database-per-Service)
+  # ========================================================
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: ecom-auth-service
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 50051
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      DB_NAME: auth_db
+      JWT_SECRET: super-secret-ecommerce-jwt-key-2026
+      PROTO_PATH: /protos/auth.proto
+    volumes:
+      - ./protos:/protos:ro
+    ports:
+      - "50051:50051"
+
+  customer-service:
+    build:
+      context: ./customer-service
+      dockerfile: Dockerfile
+    container_name: ecom-customer-service
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 50052
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      DB_NAME: customer_db
+      PROTO_PATH: /protos/customer.proto
+    volumes:
+      - ./protos:/protos:ro
+    ports:
+      - "50052:50052"
+
+  product-service:
+    build:
+      context: ./product-service
+      dockerfile: Dockerfile
+    container_name: ecom-product-service
+    restart: on-failure
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      PORT: 50053
+      MONGO_URI: mongodb://admin:admin123@mongo:27017/product_db?authSource=admin
+      DB_NAME: product_db
+      PROTO_PATH: /protos/product.proto
+    volumes:
+      - ./protos:/protos:ro
+    ports:
+      - "50053:50053"
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: ecom-order-service
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      customer-service:
+        condition: service_started
+      product-service:
+        condition: service_started
+    environment:
+      PORT: 50054
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      DB_NAME: order_db
+      KAFKA_BROKERS: kafka:9092
+      CUSTOMER_SERVICE_URL: customer-service:50052
+      PRODUCT_SERVICE_URL: product-service:50053
+      ORDER_PROTO_PATH: /protos/order.proto
+      CUSTOMER_PROTO_PATH: /protos/customer.proto
+      PRODUCT_PROTO_PATH: /protos/product.proto
+    volumes:
+      - ./protos:/protos:ro
+    ports:
+      - "50054:50054"
+
+  shipment-service:
+    build:
+      context: ./shipment-service
+      dockerfile: Dockerfile
+    container_name: ecom-shipment-service
+    restart: on-failure
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    environment:
+      PORT: 50055
+      MONGO_URI: mongodb://admin:admin123@mongo:27017/shipment_db?authSource=admin
+      DB_NAME: shipment_db
+      KAFKA_BROKERS: kafka:9092
+      PROTO_PATH: /protos/shipment.proto
+    volumes:
+      - ./protos:/protos:ro
+    ports:
+      - "50055:50055"
+
+  # ========================================================
+  # API Gateway (REST to gRPC, Redis Cache & Rate Limiter, JWT RBAC)
+  # ========================================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: ecom-api-gateway
+    restart: on-failure
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      customer-service:
+        condition: service_started
+      product-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      shipment-service:
+        condition: service_started
+    environment:
+      PORT: 8080
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: super-secret-ecommerce-jwt-key-2026
+      PROTOS_DIR: /protos
+      AUTH_SERVICE_URL: auth-service:50051
+      CUSTOMER_SERVICE_URL: customer-service:50052
+      PRODUCT_SERVICE_URL: product-service:50053
+      ORDER_SERVICE_URL: order-service:50054
+      SHIPMENT_SERVICE_URL: shipment-service:50055
+      RATE_LIMIT_WINDOW: 60
+      RATE_LIMIT_MAX: 100
+    volumes:
+      - ./protos:/protos:ro
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:

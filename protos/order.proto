@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package order;
+
+service OrderService {
+  rpc CreateOrder (CreateOrderRequest) returns (CreateOrderResponse);
+  rpc GetOrders (GetOrdersRequest) returns (OrderListResponse);
+  rpc GetOrder (GetOrderRequest) returns (OrderResponse);
+}
+
+message OrderItemInput {
+  int32 pid = 1;
+  int32 qty = 2;
+}
+
+message CreateOrderRequest {
+  int32 uid = 1;
+  repeated OrderItemInput items = 2;
+}
+
+message OrderDetailItem {
+  int32 pid = 1;
+  int32 qty = 2;
+  double unit_price = 3;
+}
+
+message ShipmentSummary {
+  int32 shipid = 1;
+  string status = 2;
+}
+
+message CreateOrderResponse {
+  int32 oid = 1;
+  int32 uid = 2;
+  double discount = 3;
+  double total_amount = 4;
+  repeated OrderDetailItem items = 5;
+  ShipmentSummary shipment = 6;
+}
+
+message GetOrdersRequest {
+  int32 uid = 1;
+  string role = 2;
+}
+
+message OrderSummary {
+  int32 oid = 1;
+  int32 uid = 2;
+  double discount = 3;
+  double total_amount = 4;
+  string status = 5;
+  string created_at = 6;
+}
+
+message OrderListResponse {
+  repeated OrderSummary items = 1;
+}
+
+message GetOrderRequest {
+  int32 oid = 1;
+  int32 uid = 2;
+  string role = 3;
+}
+
+message OrderResponse {
+  int32 oid = 1;
+  int32 uid = 2;
+  double discount = 3;
+  double total_amount = 4;
+  string status = 5;
+  string created_at = 6;
+  repeated OrderDetailItem items = 7;
+}
