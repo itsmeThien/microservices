@@ -52,12 +52,12 @@ Hệ thống được thiết kế theo nguyên tắc **Database-per-Service** v
 2. **Auth Service** (`gRPC Port 50051`):
    * Bounded Context: *Identity & Access*.
    * Quản lý thực thể `User`, `Role`.
-   * Cơ sở dữ liệu: PostgreSQL (`auth_db`).
+   * Cơ sở dữ liệu: PostgreSQL riêng (`auth_db`, container `postgres-auth`).
    * Mã hóa mật khẩu an toàn với `bcryptjs`, sinh JWT Bearer token.
 3. **Customer Service** (`gRPC Port 50052`):
    * Bounded Context: *Customer & Membership*.
    * Quản lý thực thể `Customer`, `Membership` (hạng thành viên và điểm tích lũy `score`).
-   * Cơ sở dữ liệu: PostgreSQL (`customer_db`).
+   * Cơ sở dữ liệu: PostgreSQL riêng (`customer_db`, container `postgres-customer`).
 4. **Product Service** (`gRPC Port 50053`):
    * Bounded Context: *Product Catalog*.
    * Quản lý danh mục sản phẩm và kiểm tra/trừ tồn kho tức thời (atomic inventory decrement).
@@ -68,7 +68,7 @@ Hệ thống được thiết kế theo nguyên tắc **Database-per-Service** v
    * Gọi đồng bộ gRPC sang Customer Service để lấy điểm tích lũy `score` và tính giảm giá `discount`.
    * Gọi đồng bộ gRPC sang Product Service để kiểm tra tồn kho và trừ kho.
    * **Transactional Outbox Pattern**: Lưu thông tin đơn hàng và bảng `outbox_events` trong cùng 1 Transaction database để đảm bảo tính nhất quán (Eventual Consistency), sau đó background worker phát sự kiện `OrderCreated` lên Kafka.
-   * Cơ sở dữ liệu: PostgreSQL (`order_db`).
+   * Cơ sở dữ liệu: PostgreSQL riêng (`order_db`, container `postgres-order`).
 6. **Shipment Service** (`gRPC Port 50055`):
    * Bounded Context: *Shipment*.
    * Lắng nghe sự kiện `OrderCreated` từ Kafka để tự động tạo đơn giao hàng (`status: PENDING`).
@@ -91,11 +91,13 @@ docker compose up --build -d
 ```
 
 Lệnh này sẽ tự động:
-1. Khởi động hạ tầng: **PostgreSQL 16**, **MongoDB 7**, **Redis 7**, **Zookeeper**, và **Apache Kafka**.
+1. Khởi động 7 container hạ tầng: 3 PostgreSQL 16 instance (Auth, Customer, Order), MongoDB 7, Redis 7, Zookeeper và Apache Kafka.
 2. Tự động chạy script khởi tạo Database schemas và Seed data:
-   * PostgreSQL: Tạo 3 database `auth_db`, `customer_db`, `order_db`, tạo các bảng và tài khoản Admin mặc định.
+   * Mỗi PostgreSQL instance khởi tạo schema riêng; Auth tạo roles/users và tài khoản Admin, Customer tạo customers/memberships, Order tạo orders/order_details/outbox_events.
    * MongoDB: Khởi tạo collections `products`, `shipments` và nạp danh sách sản phẩm mẫu (`Laptop`, `Mouse`, `Mechanical Keyboard`).
 3. Build và khởi chạy 5 Microservices (gRPC) và API Gateway (REST).
+
+Toàn bộ Compose có **13 container**: 5 Microservices + 1 API Gateway + 7 container hạ tầng. Các PostgreSQL instance được ánh xạ ra máy host lần lượt tại cổng `5432`, `5433` và `5434`; bên trong Docker, từng service kết nối qua tên host riêng (`postgres-auth`, `postgres-customer`, `postgres-order`) trên cổng `5432`.
 
 ### Bước 2: Kiểm tra trạng thái hệ thống
 Kiểm tra Health check endpoint của API Gateway:

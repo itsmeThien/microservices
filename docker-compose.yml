@@ -2,18 +2,57 @@ services:
   # ========================================================
   # Infrastructure: Databases, Broker & Cache
   # ========================================================
-  postgres:
+  postgres-auth:
     image: postgres:16-alpine
-    container_name: ecom-postgres
+    container_name: ecom-postgres-auth
     restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: auth_db
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/postgres-init:/docker-entrypoint-initdb.d
+      - postgres_auth_data:/var/lib/postgresql/data
+      - ./scripts/postgres-init/auth:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-customer:
+    image: postgres:16-alpine
+    container_name: ecom-postgres-customer
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: customer_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_customer_data:/var/lib/postgresql/data
+      - ./scripts/postgres-init/customer:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-order:
+    image: postgres:16-alpine
+    container_name: ecom-postgres-order
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: order_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_order_data:/var/lib/postgresql/data
+      - ./scripts/postgres-init/order:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -90,11 +129,11 @@ services:
     container_name: ecom-auth-service
     restart: on-failure
     depends_on:
-      postgres:
+      postgres-auth:
         condition: service_healthy
     environment:
       PORT: 50051
-      DB_HOST: postgres
+      DB_HOST: postgres-auth
       DB_PORT: 5432
       DB_USER: postgres
       DB_PASSWORD: postgres123
@@ -113,11 +152,11 @@ services:
     container_name: ecom-customer-service
     restart: on-failure
     depends_on:
-      postgres:
+      postgres-customer:
         condition: service_healthy
     environment:
       PORT: 50052
-      DB_HOST: postgres
+      DB_HOST: postgres-customer
       DB_PORT: 5432
       DB_USER: postgres
       DB_PASSWORD: postgres123
@@ -154,7 +193,7 @@ services:
     container_name: ecom-order-service
     restart: on-failure
     depends_on:
-      postgres:
+      postgres-order:
         condition: service_healthy
       kafka:
         condition: service_started
@@ -164,7 +203,7 @@ services:
         condition: service_started
     environment:
       PORT: 50054
-      DB_HOST: postgres
+      DB_HOST: postgres-order
       DB_PORT: 5432
       DB_USER: postgres
       DB_PASSWORD: postgres123
@@ -243,6 +282,8 @@ services:
       - "8080:8080"
 
 volumes:
-  postgres_data:
+  postgres_auth_data:
+  postgres_customer_data:
+  postgres_order_data:
   mongo_data:
   redis_data:
