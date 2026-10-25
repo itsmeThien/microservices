@@ -1,12 +1,13 @@
-import { Kafka, LogLevel } from 'kafkajs';
+import pkg from 'kafkajs';
 import { connectDB } from './db.js';
 
+const { Kafka, logLevel } = pkg;
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'kafka:9092').split(',');
 
 const kafka = new Kafka({
   clientId: 'shipment-service',
   brokers: KAFKA_BROKERS,
-  logLevel: LogLevel.WARN,
+  logLevel: logLevel.WARN,
   retry: {
     initialRetryTime: 500,
     retries: 10
