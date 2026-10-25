@@ -1,4 +1,5 @@
-import { Kafka, LogLevel } from 'kafkajs';
+import pkg from 'kafkajs';
+const { Kafka, LogLevel } = pkg;
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'kafka:9092').split(',');
 
