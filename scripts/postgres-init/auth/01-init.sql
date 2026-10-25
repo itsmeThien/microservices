@@ -20,7 +20,7 @@ INSERT INTO roles (roleid, rolename) VALUES
 ON CONFLICT (roleid) DO NOTHING;
 
 INSERT INTO users (uid, username, password, email, phone, roleid) VALUES
-(1, 'admin', '$2a$10$7Z8KqD4V2Y8k2s.8bE6s2uD9e7kH1V3N5m9O8q2w4e6r8t0y2u4i6', 'admin@example.com', '0900000001', 1)
+(1, 'admin', '$2a$10$eHKImiN5bQ6h6QilPEhoM.bIbTXYFl.CAdCExCScY660i0yVj5tE2', 'admin@example.com', '0900000001', 1)
 ON CONFLICT (uid) DO NOTHING;
 
 SELECT setval('users_uid_seq', (SELECT MAX(uid) FROM users));
